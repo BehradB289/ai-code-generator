@@ -1,7 +1,8 @@
 import os
 import json
 import sys
-import google.generativeai as genai
+# دیگر از کتابخانه google-generativeai استفاده نمی‌کنیم
+from google import genai 
 from github import Github
 
 def extract_prompt():
@@ -24,10 +25,11 @@ def extract_prompt():
 
 
 def generate_code(prompt):
-    """از مدل Gemini می‌خواهد کدها را با فرمت اجباری تولید کند."""
-    genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
+    """از مدل جدید Gemini برای تولید کد استفاده می‌کند."""
+    # نحوه راه‌اندازی کلاینت در کتابخانه جدید
+    client = genai.Client(api_key=os.environ['GOOGLE_API_KEY'])
 
-    # برای جلوگیری از شکستن ظاهری کد در چت، پرامپت را ساده و با خط جداکننده می‌سازیم
+    # پرامپت سخت‌گیرانه برای دریافت خروجی با فرمت درست
     strict_prompt = (
         "You are a code generator. Your output MUST be ONLY in the following format.\n"
         "DO NOT ADD ANY OTHER TEXT, EXPLANATIONS, OR NOTES OUTSIDE THE SPECIFIED BLOCKS.\n\n"
@@ -45,16 +47,17 @@ def generate_code(prompt):
         + prompt
     )
 
-    model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        system_instruction="You are a coding machine. You ONLY output in the strict format with # FILENAME: tags and code blocks.",
-        generation_config=genai.GenerationConfig(
-            temperature=0.2,
-            max_output_tokens=8000
-        )
+    # استفاده از مدل جدید و رایگان gemini-2.5-flash
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=strict_prompt,
+        config={
+            'system_instruction': "You are a coding machine. You ONLY output in the strict format with # FILENAME: tags and code blocks.",
+            'temperature': 0.2,
+            'max_output_tokens': 8000
+        }
     )
     
-    response = model.generate_content(strict_prompt)
     return response.text
 
 
