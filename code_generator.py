@@ -24,10 +24,10 @@ def extract_prompt():
 
 
 def generate_code(prompt):
-    """از DeepSeek API برای تولید کد استفاده می‌کند."""
+    """از Together AI برای تولید کد استفاده می‌کند."""
     client = OpenAI(
-        api_key=os.environ['DEEPSEEK_API_KEY'],
-        base_url="https://api.deepseek.com"
+        api_key=os.environ['TOGETHER_API_KEY'],
+        base_url="https://api.together.xyz/v1"
     )
 
     # پرامپت سخت‌گیرانه برای دریافت خروجی با فرمت درست
@@ -48,10 +48,11 @@ def generate_code(prompt):
         + prompt
     )
 
+    # استفاده از مدل رایگان و قدرتمند Qwen 2.5 Coder 32B
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        model="Qwen/Qwen2.5-Coder-32B-Instruct",
         messages=[
-            {"role": "system", "content": "You are a coding machine. You ONLY output in the strict format with # FILENAME: tags and code blocks."},
+            {"role": "system", "content": "You are a professional coding machine. You ONLY output in the strict format with # FILENAME: tags and code blocks."},
             {"role": "user", "content": strict_prompt}
         ],
         temperature=0.2,
@@ -161,7 +162,7 @@ def main():
     
     print(f"📝 درخواست: {prompt[:200]}...")
     
-    print("\n🤖 برقراری ارتباط با DeepSeek API...")
+    print("\n🤖 برقراری ارتباط با Together AI...")
     try:
         generated = generate_code(prompt)
     except Exception as e:
