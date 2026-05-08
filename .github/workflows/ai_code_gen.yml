@@ -28,7 +28,7 @@ jobs:
           python-version: '3.11'
 
       - name: 📦 Install Dependencies
-        run: pip install google-generativeai PyGithub
+        run: pip install google-genai PyGithub
 
       - name: 🚀 Run Code Generator
         env:
