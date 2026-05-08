@@ -1,0 +1,40 @@
+name: 🤖 AI Code Generator
+
+# این‌جا میگیم چه اتفاقی باعث اجرای ربات بشه:
+on:
+  issues:
+    types: [opened]          # با هر Issue جدید
+  workflow_dispatch:         # یا دستی از تب Actions
+    inputs:
+      prompt:
+        description: 'توضیح بده چه کدی می‌خوای'
+        required: true
+        default: ''
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest    # سیستم‌عاملی که کد روش اجرا میشه
+    permissions:
+      contents: write         # اجازه ساخت مخزن جدید
+      issues: write           # اجازه کامنت روی Issue
+      pull-requests: write
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4   # کدهای مخزن فعلی رو میاره
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Dependencies
+        run: pip install google-generativeai PyGithub
+
+      - name: 🚀 Run Code Generator
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}   # از Secrets میخونیم
+          GH_PAT: ${{ secrets.GH_PAT }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          EVENT_PAYLOAD: ${{ toJson(github.event) }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: python code_generator.py
