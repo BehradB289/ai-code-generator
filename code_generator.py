@@ -1,12 +1,21 @@
 import os
 import json
 import sys
-# دیگر از کتابخانه google-generativeai استفاده نمی‌کنیم
-from google import genai 
+from google import genai
 from github import Github
 
+# لیست مدل‌هایی که پشت سر هم تست می‌شوند
+MODEL_LIST = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-flash-latest",
+    "gemini-pro",
+    "models/gemini-1.5-flash",
+    "models/gemini-2.5-flash",
+]
+
 def extract_prompt():
-    """پرامپت را از رویداد اجرا (Issue یا دستی) استخراج می‌کند."""
     event_name = os.environ.get('EVENT_NAME')
     event_payload = json.loads(os.environ.get('EVENT_PAYLOAD', '{}'))
 
@@ -14,9 +23,8 @@ def extract_prompt():
         title = event_payload.get('issue', {}).get('title', 'No Title')
         body = event_payload.get('issue', {}).get('body', '')
         issue_number = event_payload.get('issue', {}).get('number')
-        full_prompt = f"Project Title: {title}\n\nDescription:\n{body}"
-        return full_prompt, issue_number
-
+        return f"Project Title: {title}\n\nDescription:\n{body}", issue_number
+    
     elif event_name == 'workflow_dispatch':
         prompt = event_payload.get('inputs', {}).get('prompt', '')
         return prompt, None
@@ -25,14 +33,12 @@ def extract_prompt():
 
 
 def generate_code(prompt):
-    """از مدل جدید Gemini برای تولید کد استفاده می‌کند."""
-    # نحوه راه‌اندازی کلاینت در کتابخانه جدید
+    """مدل‌های مختلف را امتحان می‌کند تا یک پاسخ معتبر بگیرد."""
     client = genai.Client(api_key=os.environ['GOOGLE_API_KEY'])
-
-    # پرامپت سخت‌گیرانه برای دریافت خروجی با فرمت درست
+    
     strict_prompt = (
-        "You are a code generator. Your output MUST be ONLY in the following format.\n"
-        "DO NOT ADD ANY OTHER TEXT, EXPLANATIONS, OR NOTES OUTSIDE THE SPECIFIED BLOCKS.\n\n"
+        "You are a strict code generator. You ONLY output code in the following format. "
+        "NO extra text, NO explanations, NO notes outside the code blocks.\n\n"
         "For each file, use EXACTLY this structure:\n\n"
         "# FILENAME: filename.py\n"
         "```\n"
@@ -47,22 +53,31 @@ def generate_code(prompt):
         + prompt
     )
 
-    # استفاده از مدل جدید و رایگان gemini-2.5-flash
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=strict_prompt,
-        config={
-            'system_instruction': "You are a coding machine. You ONLY output in the strict format with # FILENAME: tags and code blocks.",
-            'temperature': 0.2,
-            'max_output_tokens': 8000
-        }
-    )
+    last_error = None
+    for model in MODEL_LIST:
+        try:
+            print(f"🔍 تلاش با مدل: {model}")
+            response = client.models.generate_content(
+                model=model,
+                contents=strict_prompt,
+                config={
+                    'system_instruction': "You are a coding machine. You ONLY output in the strict format with # FILENAME: tags and code blocks.",
+                    'temperature': 0.3,
+                    'max_output_tokens': 8000
+                }
+            )
+            print(f"✅ مدل {model} با موفقیت پاسخ داد.")
+            return response.text
+        except Exception as e:
+            last_error = e
+            print(f"⚠️ مدل {model} شکست خورد: {e}")
+            continue
     
-    return response.text
+    # اگر هیچ مدلی جواب نداد
+    raise RuntimeError(f"هیچ‌یک از مدل‌های لیست کار نکرد. آخرین خطا: {last_error}")
 
 
 def parse_response_to_files(text):
-    """تجزیه پاسخ با فرمت # FILENAME: یا بازیابی اضطراری."""
     files = {}
     current_filename = None
     current_content = []
@@ -80,7 +95,6 @@ def parse_response_to_files(text):
     if current_filename:
         files[current_filename] = '\n'.join(current_content).strip()
 
-    # اگر هیچ فایلی با این روش پیدا نشد، کل پاسخ را به عنوان فایل output.md ذخیره کن
     if not files:
         print("⚠️ مدل فرمت درخواستی را رعایت نکرد. کل پاسخ در فایل output.md ذخیره می‌شود.")
         clean_text = text.replace('```', '')
@@ -90,7 +104,6 @@ def parse_response_to_files(text):
 
 
 def create_github_repo(repo_name):
-    """مخزن جدید را می‌سازد. در صورت شکست، Action را متوقف می‌کند."""
     try:
         g = Github(os.environ['GH_PAT'])
         user = g.get_user()
@@ -107,32 +120,20 @@ def create_github_repo(repo_name):
 
 
 def push_files_to_repo(repo, files):
-    """فایل‌ها را در مخزن آپلود می‌کند."""
     for filename, content in files.items():
         try:
             try:
                 existing = repo.get_contents(filename)
-                repo.update_file(
-                    path=filename,
-                    message=f"AI Update: {filename}",
-                    content=content,
-                    sha=existing.sha
-                )
+                repo.update_file(path=filename, message=f"AI Update: {filename}", content=content, sha=existing.sha)
                 print(f"🔄 بروزرسانی: {filename}")
             except:
-                repo.create_file(
-                    path=filename,
-                    message=f"AI Commit: {filename}",
-                    content=content
-                )
+                repo.create_file(path=filename, message=f"AI Commit: {filename}", content=content)
                 print(f"➕ ایجاد: {filename}")
         except Exception as e:
             print(f"❌ خطا در آپلود {filename}: {e}")
-            print(f"⚠️ ادامه فرآیند با وجود خطا...")
 
 
 def comment_on_issue(repo_name, issue_number, new_repo_url):
-    """روی Issue کامنت می‌گذارد. در صورت شکست، فقط هشدار می‌دهد (مخزن ساخته شده)."""
     try:
         g = Github(os.environ['GH_PAT'])
         repo = g.get_repo(f"{os.environ['REPO_OWNER']}/{repo_name}")
@@ -154,18 +155,17 @@ def comment_on_issue(repo_name, issue_number, new_repo_url):
 def main():
     print("🔄 دریافت درخواست کاربر...")
     prompt, issue_number = extract_prompt()
-    
     if not prompt:
         print("❌ هیچ درخواستی یافت نشد.")
         sys.exit(1)
     
     print(f"📝 درخواست: {prompt[:200]}...")
     
-    print("\n🤖 برقراری ارتباط با Google AI Studio...")
+    print("\n🤖 تلاش برای اتصال به مدل‌های مختلف Google AI...")
     try:
         generated = generate_code(prompt)
     except Exception as e:
-        print(f"❌ خطا در هوش مصنوعی: {e}")
+        print(f"❌ خطای نهایی هوش مصنوعی: {e}")
         sys.exit(1)
     
     print("📦 تجزیه پاسخ...")
